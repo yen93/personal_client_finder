@@ -1,0 +1,10 @@
+**enrich_file:**
+"C:\Users\Cloverly\claude_code\upskilling\client_finder\manual_enrichment\2026-11-21_us_sales.txt"
+
+**edge_function_steps:**
+1. update us_sales_hiring_leads.email based on enrich_file
+2. set enrich_id = 1 where email is not null and 2 if null in enrich_file
+3. set enriched_at = now() to all leads in enrich_file
+
+## main task:
+1. create edge function that does edge_function_steps

@@ -1,0 +1,17 @@
+node_modules/
+.env
+*.env
+.env.*
+*.pem
+*.key
+*service-account*.json
+*credentials*.json
+*token*.txt
+*creds*.txt
+secrets/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example

@@ -1,0 +1,22 @@
+[
+  {
+    "concat": "Amy Larko Falanga, The Larko Group",
+    "email": "alarko@thelarkogroup.com"
+  },
+  {
+    "concat": "Robert Demaree, Verde Trader",
+    "email": null
+  },
+  {
+    "concat": "Michael Diakoulas, Soul Society",
+    "email": null
+  },
+  {
+    "concat": "Janice Heffernan, Integrity Insurance and Financial Services IL, TX",
+    "email": "jheffernan@integrityadvisers.com"
+  },
+  {
+    "concat": "Bill Randag, Trusted Home Service Partners",
+    "email": "brandag@thspartners.com"
+  }
+]

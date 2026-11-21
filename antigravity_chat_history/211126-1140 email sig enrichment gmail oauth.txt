@@ -1,0 +1,162 @@
+================================================================================
+UPDATE DOCUMENTATION: EMAIL SIG, US SKILL, ENRICHMENT EF & GMAIL OAUTH
+Timestamp: 21/11/26 11:40 (UTC+08:00)
+Workspace: client_finder (C:\Users\Cloverly\claude_code\upskilling\client_finder)
+================================================================================
+
+1. WEBSITE-MATCHED EMAIL SIGNATURES (v2 - v4)
+--------------------------------------------------------------------------------
+* Problem / Context:
+  `emailsig.v1.html` used mismatched WiseStamp cyan (#00AFDB) colors, scraped
+  Gmail markup (`data-saferedirecturl`, proxied `ci3.googleusercontent.com`
+  button image, `<wbr>`), a hardcoded `?month=2026-11` Calendly query param,
+  and omitted live site/social links.
+
+* Technical Changes:
+  - Created three clean, zero-image, inline-table HTML signatures matching the
+    exact `website/index.html` warm ivory/espresso/obsidian/burnished-gold
+    palette (`#f8f4ec`, `#1c1811`, `#6f6757`, `#b4863a`, `#8f6a23`, `#e7dfd0`,
+    `#14110b`, `#f4f0e7`, `#e0b65f`), evergreen Calendly link, and live
+    `yen-ai.pages.dev`, LinkedIn, and GitHub links:
+    * emailsig.v2.html — warm-ivory card with inner left gold accent bar.
+    * emailsig.v3.html — transparent background with full-height gold left bar.
+    * emailsig.v4.html — transparent background, no vertical bar, two-tone
+      36px gold + warm sand horizontal divider.
+
+2. US CLIENT FINDER WORKSPACE SKILL & LIVE ILLINOIS RUN
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Needed a repeatable, callable Antigravity skill to trigger, monitor, and
+  inspect runs of the `us-sales-hiring-leads` Edge Function without hardcoding
+  secrets or re-scraping previously covered states.
+
+* Technical Changes:
+  - Created workspace skill:
+    .agents/skills/us-client-finder/SKILL.md
+  - Created standard-library Python helper script:
+    .agents/skills/us-client-finder/scripts/run_us_client_finder.py
+    * Dynamically loads `SUPABASE_ACCESS_TOKEN` (env or Downloads token file)
+      and fetches project `anon` key via Supabase Management API at runtime.
+    * Supports `--status-only`, repeatable `--location`, `--roles`,
+      `--rows-per-role`, `--published-at`, `--mode`, `--dry-run`,
+      `--wait-seconds`, and `--since`.
+  - Executed live async run targeting unscraped state `Illinois, United States`
+    (`rowsPerRole=75` across 4 default outbound sales roles = 300 jobs).
+
+3. DATABASE MIGRATIONS & TABLE RENAME (au_hiring_signal_leads)
+--------------------------------------------------------------------------------
+* Problem / Context:
+  `public.us_sales_hiring_leads` had 4 newer enrichment/outreach columns not
+  yet present on `public.hiring_signal_leads`, and the general/AU table needed
+  explicit `au_` prefixing.
+
+* Technical Changes:
+  - Created & applied migration:
+    supabase/migrations/20261121_add_enrichment_columns_to_hiring_signal_leads.sql
+    * Added `enriched_at timestamptz`, `sent_intro_at timestamptz`,
+      `email text`, and `enrichment_id integer` to `public.hiring_signal_leads`.
+  - Created & applied migration:
+    supabase/migrations/20261121_rename_hiring_signal_leads_to_au_hiring_signal_leads.sql
+    * Renamed table `public.hiring_signal_leads` -> `public.au_hiring_signal_leads`,
+      along with PK, unique constraint (`au_hiring_signal_leads_company_poc_unique`),
+      indexes, `BEFORE UPDATE` trigger (`trg_au_hiring_signal_leads_updated_at`),
+      and trigger function (`set_au_hiring_signal_leads_updated_at`).
+  - Updated `supabase/functions/hiring-signal-leads/index.ts` (lines 563-574)
+    to upsert into `au_hiring_signal_leads` and redeployed to Supabase as v6.
+
+4. LEAD ENRICHMENT EDGE FUNCTION (enrich-hiring-leads)
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Needed an Edge Function matching `prompts/261121_enrichment_edge_function.txt`
+  to ingest manually researched email JSON batches (e.g.,
+  `manual_enrichment/2026-11-21_us_sales.txt`), update `email`, set
+  `enrichment_id` (1 if email present, 2 if null), and stamp `enriched_at = now()`.
+
+* Technical Changes:
+  - Created & deployed:
+    supabase/functions/enrich-hiring-leads/index.ts (v1, ACTIVE, verify_jwt=true)
+    * Accepts raw JSON array `[{ concat, email }]` or wrapper object
+      `{ table?, dryRun?, leads }`; allowlists `us_sales_hiring_leads` (default)
+      and `au_hiring_signal_leads`.
+    * Splits `concat` on the FIRST comma only so company names containing commas
+      (e.g., `Integrity Insurance and Financial Services IL, TX`) parse intact.
+    * Matches existing rows by exact `(company, poc_name)` with escaped `.ilike`
+      fallback; strictly update-only (never inserts orphan rows).
+    * Maps prompt's `enrich_id` to live DB column `enrichment_id`.
+
+5. PERSONAL GMAIL FULL-ACCESS OAUTH 2.0 CREDENTIALS
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Needed n8n-style silent OAuth 2.0 refresh-token access (`https://mail.google.com/`)
+  for personal mailbox `juliennemaeanito.2026@gmail.com` using the Web OAuth
+  client in personal GCP project `ai-and-business-automation` (`654973590578`,
+  owned by `juliennemaeanito.de@gmail.com`) without disturbing the active MAG
+  `gcloud` configuration (`claudegwscli-502400`).
+
+* Technical Changes & Troubleshooting:
+  - Added `http://localhost:8765/callback` redirect URI in Google Cloud Console
+    and ran a one-time local OAuth 2.0 consent flow (`access_type=offline`,
+    `prompt=consent`, scope `https://mail.google.com/` + `userinfo.email`).
+  - First Gmail API profile check returned `HTTP 403 SERVICE_DISABLED` because
+    Gmail API was not yet enabled in project `654973590578`; updated script to
+    save credentials immediately, user enabled `gmail.googleapis.com`, and
+    silent `refresh_token` -> `access_token` refresh verified `HTTP 200`.
+  - Created isolated `gcloud` configuration `personal-ai` (`ai-and-business-automation`,
+    `juliennemaeanito.de@gmail.com`) while keeping `default` (`julienne@myadventuregroup.com.au`,
+    `claudegwscli-502400`) active and untouched.
+  - Stored credentials across 3 zero-git destinations (names only):
+    * Local file outside repo: `C:\Users\Cloverly\.config\gmail_personal_oauth.json`
+    * GSM (`ai-and-business-automation`): `gmail_personal_oauth_json`,
+      `gmail_personal_refresh_token`
+    * Supabase Edge Function Secrets (`uwsncuowtzydylfabikj`):
+      `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`,
+      `GMAIL_USER_EMAIL`
+
+6. MODULAR SYSTEM ARCHITECTURE DOCS & SKILL UPDATE
+--------------------------------------------------------------------------------
+* Technical Changes:
+  - Created `system_architecture/` folder with two modular docs (verified zero
+    live secrets):
+    * system_architecture/system_architecture_lead_enrichment.md
+    * system_architecture/system_architecture_gmail_oauth.md
+  - Updated global skill `C:\Users\Cloverly\.gemini\config\skills\system-architecture\SKILL.md`
+    to standardize future `/system-architecture` outputs under
+    `<workspace_root>/system_architecture/system_architecture_<what_it_is>.md`.
+
+7. EDGE FUNCTIONS & CRON SCHEDULES
+--------------------------------------------------------------------------------
+* Functions Created / Modified (Project: `uwsncuowtzydylfabikj`):
+  - `hiring-signal-leads` (redeployed v6, ACTIVE, `verify_jwt: true`)
+    Source: supabase/functions/hiring-signal-leads/index.ts
+  - `enrich-hiring-leads` (created & deployed v1, ACTIVE, `verify_jwt: true`)
+    Source: supabase/functions/enrich-hiring-leads/index.ts
+    URL: https://uwsncuowtzydylfabikj.supabase.co/functions/v1/enrich-hiring-leads
+* Schedules & Crons:
+  - No new `pg_cron` schedules added (manual HTTP POST / skill triggers).
+
+8. VERIFICATION & RESULTS
+--------------------------------------------------------------------------------
+* Illinois Async Scrape (`us-sales-hiring-leads` via `us-client-finder` skill):
+  - 4/4 `bebity` job runs SUCCEEDED (300 jobs, 22 SMBs), 4/4 `jobs_done`
+    webhooks HTTP 200, 5 new Illinois SMB leads upserted (all 5 with domains:
+    The Larko Group, Verde Trader, Soul Society, Integrity Insurance and
+    Financial Services IL, TX, Trusted Home Service Partners).
+  - Run cost: ~$0.40 USD (Apify monthly meter ~$16.57 / $19.00).
+* Table Rename & Schema Verification:
+  - `public.au_hiring_signal_leads`: 11 rows, 14 columns; old
+    `public.hiring_signal_leads` removed (0 tables matching old name).
+* Live Enrichment Verification (`enrich-hiring-leads` against `2026-11-21_us_sales.txt`):
+  - Dry run & live run both returned `ok: true`, `updated: 5/5`
+    (`enriched_with_email: 3`, `enriched_no_email: 2`, `not_found: 0`).
+  - Live snapshot (`2026-11-21`):
+    * `public.us_sales_hiring_leads`: 32 total (6 with email / `enrichment_id=1`,
+      26 `enrichment_id=2`, 8 `enriched_at` set, 3 `sent_intro_at` set -> 3 ready).
+    * `public.au_hiring_signal_leads`: 11 total (1 with email / `enrichment_id=1`,
+      10 `enrichment_id IS NULL`, 1 `sent_intro_at` set).
+* Gmail OAuth Verification:
+  - Verified silent `refresh_token` exchange + Gmail API read on
+    `juliennemaeanito.2026@gmail.com` (`7` messages, `7` threads, `15` labels
+    including custom label `sales_leads`).
+  - Confirmed `default` gcloud config remains `julienne@myadventuregroup.com.au`
+    / `claudegwscli-502400`.
+================================================================================

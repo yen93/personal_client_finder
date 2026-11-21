@@ -1,0 +1,159 @@
+================================================================================
+UPDATE DOCUMENTATION: APIFY HIRING SIGNAL EDGE FUNCTIONS & ARCHITECTURE
+Timestamp: 19/11/26 20:55 (UTC+8)
+Workspace: client_finder (C:\Users\Cloverly\claude_code\upskilling\client_finder)
+================================================================================
+
+1. TARGET NICHE STRATEGY & #1 BUYING SIGNAL DEFINITION
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Identified the highest-intent, highest-ROI target leads for Julienne's AI &
+  Business Automation consultancy based on existing anonymized proof (30+ live
+  workflows, ~40 hrs/week saved) and SMB automation pain-point studies.
+
+* Strategic Decisions:
+  - Top recommended niches: Boutique Recruitment/Staffing Agencies (5-30 staff),
+    Non-competing Event/Retreat/Tour Operators, Accounting/Tax/Commercial Finance
+    Firms, and underserved "Boring B2B" & Insurance Brokerages.
+  - #1 Buying Signal (niche-agnostic): SMBs (5-50 / 5-100 employees) actively
+    hiring for manual Admin Assistant, Operations Coordinator, Sales Admin, or
+    Outbound SDR/BDR/Lead Generation roles — proving both operational pain and
+    approved payroll budget.
+
+2. GENERAL SMB HIRING-SIGNAL PIPELINE (AU / MULTI-ROLE)
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Built an Apify-backed Supabase Edge Function on project `uwsncuowtzydylfabikj`
+  to scrape companies hiring admin/ops/sales roles, resolve a single high-
+  authority POC (`poc_name`, `poc_role`), and persist results upsert-only.
+
+* Technical Changes:
+  - Created migration:
+    supabase/migrations/20261119_create_hiring_signal_leads.sql
+  - Created Edge Function:
+    supabase/functions/hiring-signal-leads/index.ts (deployed as v1 -> v5)
+  - Database schema (`public.hiring_signal_leads`):
+    * Columns: `id` (uuid PK), `company`, `poc_name`, `poc_role`,
+      `company_domain`, `hiring_role`, `job_url`, `source`, `created_at`,
+      `updated_at`.
+    * Constraint: `hiring_signal_leads_company_poc_unique UNIQUE (company, poc_name)`
+      for upsert-only deduplication.
+    * Trigger: `trg_hiring_signal_leads_updated_at` (`BEFORE UPDATE`).
+    * Security: RLS enabled (no public/anon policies; `service_role` access only).
+  - Troubleshooting & Fixes during live testing:
+    * `code_crafter~leads-finder` returned Apify HTTP 403
+      (`full-permission-actor-not-approved`). Inspected account actor history
+      and switched Stage 2 POC enrichment to `deepmine~linkedin-company-employees`
+      (`qsdm9lSgnT6W9WcZm`), which is already approved and searches directly by
+      company name.
+    * Inspected live `bebity~linkedin-jobs-scraper` (`BHzefUZlZRKWxkTck`) output
+      and fixed employee count parsing to check `Math.max(companySize,
+      companyEmployeeCount)` so enterprises with partial/bogus counts cannot
+      bypass the SMB filter.
+    * Added `seniorityLevels: ["Owner", "Partner", "CXO", "VP", "Director",
+      "Manager"]` on `deepmine` (filtered-out junior profiles are not billed)
+      and excluded public-sector/university institutions.
+
+3. US OUTBOUND SALES HIRING-SIGNAL PIPELINE (ASYNC WEBHOOKS)
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Created a separate table and Edge Function targeting America-only SMBs hiring
+  specifically for outbound sales / lead-generation roles (SDR, BDR, Lead
+  Generation Specialist, Outbound Sales Representative). Initial large US
+  synchronous batches hit Supabase's 150-second HTTP gateway timeout (504)
+  because nationwide US LinkedIn results are enterprise-heavy.
+
+* Technical Changes:
+  - Created migration:
+    supabase/migrations/20261119_create_us_sales_hiring_leads.sql
+  - Created Edge Function:
+    supabase/functions/us-sales-hiring-leads/index.ts (deployed as v1 -> v3)
+  - Database schema (`public.us_sales_hiring_leads`):
+    * Columns: `id` (uuid PK), `company`, `poc_name`, `poc_role`,
+      `company_domain`, `hiring_role`, `job_location`, `job_url`, `source`,
+      `created_at`, `updated_at`.
+    * Constraint: `us_sales_hiring_leads_company_poc_unique UNIQUE (company, poc_name)`.
+    * Trigger: `trg_us_sales_hiring_leads_updated_at` (`BEFORE UPDATE`).
+    * Security: RLS enabled (`service_role` only).
+  - Filtering & Enrichment Enhancements:
+    * US-only location enforcement (`usLocation` auto-appends `, United States`;
+      rejects non-US job locations).
+    * Strict `isOutboundOrLeadGenJobTitle()` filter keeping outbound/SDR/BDR/
+      lead-gen/appointment-setter/inside-sales roles and excluding retail,
+      door-to-door, dealership, canvasser, and customer-service listings.
+    * Strict `isNonTargetOrganization()` blocking universities (substring match),
+      colleges, schools, hospitals, government, and 19 major US staffing mills
+      (Robert Half, Randstad, TEKsystems, Insight Global, Jobot, etc.).
+    * Default `includeUnknownSize: false` and `Math.max(companySize,
+      companyEmployeeCount)` eliminated enterprise leakage (e.g., Cisco).
+    * Sales/exec decision-maker scoring (`scoreSalesDecisionMaker`) prioritizing
+      Founder/Owner/CEO/President -> CRO/VP Sales/Head of Sales -> COO/GM.
+  - Async Apify Webhook Upgrade (v3):
+    * Default `mode: "async"` launches `bebity` job runs via `POST /runs` with
+      Base64-encoded ad-hoc webhooks pointing back to `?stage=jobs_done`
+      (authenticated via `headersTemplate` with `SUPABASE_ANON_KEY`) and returns
+      HTTP 202 in ~2 seconds.
+    * `?stage=jobs_done` downloads the jobs dataset, filters SMBs, and launches
+      async `deepmine` runs with a second webhook pointing to `?stage=pocs_done`
+      carrying only `jobsDatasetId` + `config`.
+    * `?stage=pocs_done` fetches both datasets, matches top 1 POC per company,
+      and upserts into `public.us_sales_hiring_leads` with zero staging tables
+      and zero 150s timeouts.
+
+4. SYSTEM ARCHITECTURE DOCUMENTATION
+--------------------------------------------------------------------------------
+* Created:
+  - SYSTEM_ARCHITECTURE.md at workspace root documenting the unified end-to-end
+    architecture (Mermaid flowchart, async webhook sequence diagram, planned
+    outreach state machine, full column-level DB contracts, live snapshot row
+    counts, Apify actor mappings, secrets matrix with zero live credentials,
+    and operational gotchas including live-vs-repo drift).
+
+5. EDGE FUNCTIONS, SECRETS & CRON SCHEDULES
+--------------------------------------------------------------------------------
+* Functions Created / Deployed (Project: `uwsncuowtzydylfabikj`):
+  - `hiring-signal-leads` (ACTIVE, v5, `verify_jwt: true`)
+    Source: supabase/functions/hiring-signal-leads/index.ts
+    URL: https://uwsncuowtzydylfabikj.supabase.co/functions/v1/hiring-signal-leads
+  - `us-sales-hiring-leads` (ACTIVE, v3, `verify_jwt: true`)
+    Source: supabase/functions/us-sales-hiring-leads/index.ts
+    URL: https://uwsncuowtzydylfabikj.supabase.co/functions/v1/us-sales-hiring-leads
+
+* Secrets Synced (Names Only):
+  - Pulled `apify-api-token` from Google Secret Manager and stored as
+    `APIFY_TOKEN` in Supabase project `uwsncuowtzydylfabikj` Edge Function
+    secrets.
+  - Admin deployment authenticated via local `SUPABASE_ACCESS_TOKEN`.
+
+* Schedules & Crons:
+  - No `pg_cron` schedule attached to either Client Finder Edge Function yet
+    (manual HTTP POST triggers only).
+  - Verified 33 existing `pg_cron` jobs and ~93 n8n tables on
+    `uwsncuowtzydylfabikj` belong to separate automations and were left
+    untouched.
+
+6. VERIFICATION, LIVE RESULTS & APIFY COST
+--------------------------------------------------------------------------------
+* Live Table Row Counts (verified on `uwsncuowtzydylfabikj` as of 2026-11-19):
+  - `public.hiring_signal_leads`: 11 rows total (7 with `company_domain`),
+    including SMB matches such as Kennedy Tax and Business Services, Reliable
+    Hire, Carroll Consulting Group, WOW Recruitment, Forsythes Training, and
+    FUNDAY Natural Sweets.
+  - `public.us_sales_hiring_leads`: 27 rows total (26 with `company_domain`),
+    including 17 new leads from the full 4-state async run (Texas, Florida,
+    California, New York — 600 jobs scraped, 25/25 recent Apify runs SUCCEEDED,
+    all webhooks HTTP 200). 12 of the 17 new POCs are Founders, Co-Founders,
+    CEOs, Business Owners, or Partners (e.g., Jackson James, Eiffel Trading,
+    Shields Group Search, Homeland Talent Solutions, Search BizAthletes,
+    Maintouch, Linq, Closr, Assembly HOA, DealMachine, Boom, ResQ, Sydecar,
+    TrustLayer).
+
+* Verified Apify Cost Breakdown (58 runs across both functions today):
+  - `hiring-signal-leads` (8 runs): $0.1668 USD (~$0.17)
+  - `us-sales-hiring-leads` (50 runs, incl. tests + nationwide + 4-state):
+    $1.8730 USD (~$1.87; 4-state TX/FL/CA/NY batch alone cost ~$0.90)
+  - Grand Total: $2.0398 USD (~$2.04 across 37+ leads, ~$0.055/lead)
+    * `bebity/linkedin-jobs-scraper`: $1.7135 USD (~84%)
+    * `deepmine/linkedin-company-employees`: $0.3263 USD (~16%)
+  - Account monthly meter: $15.75 / $19.00 USD (~$3.25 remaining this cycle).
+================================================================================

@@ -1,0 +1,16 @@
+**ref_projs:**
+1. n8n - https://n8n-659687081407.australia-southeast1.run.app/webhook/dc6155e4-0178-4aad-bc0e-fcb3d8f1c6c1
+"C:\Users\Cloverly\claude_code\education_sector_automations"
+2. supabase edge functions - check supabase
+3. summary of other builds - mag_build_summary
+
+**mag_build_summary:**
+https://docs.google.com/presentation/d/1aBbI4MXkO5-fMkKDh5H5YxYQnHjYoGqK/edit?slide=id.p2#slide=id.p2
+
+## main_task:
+1. so i want to create an outreach automation much like ref_projs. 
+2. but this time, it will be for the purpose of finding other clients that might be interested in my automation services.
+3. other than the ref_projs, you can check my most recent projs in my GitHub to see what kind of automations I build.
+4. you can also check mag_build_summary, to see the automations I built for MAG.
+5. I need help planning the chase messages, the things I need to put together to package myself and my services? idk. what do i do? a website? or just a portfolio? or do i need testimonials first? what?
+6. keep in mind is that i just want to sell myself and my automation building services and find other high paying clients

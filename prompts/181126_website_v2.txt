@@ -1,0 +1,20 @@
+**failed_site:**
+"C:\Users\Cloverly\claude_code\upskilling\client_finder\website\index.html"
+
+**creds_files:**
+1. cv before becoming an AI & Automations Engineer - "C:\Users\Cloverly\claude_code\upskilling\client_finder\cred_files\Anito - Oct Resume.pdf"
+2. linkedin - "C:\Users\Cloverly\claude_code\upskilling\client_finder\cred_files\Julienne Mae Anito _ LinkedIn.html"
+3. portfolio before my current role - "C:\Users\Cloverly\claude_code\upskilling\client_finder\cred_files\Julienne Mae Anito - Full Stack Developer 2025 portfolio.html"
+4. just some of my builds in my current role - ref_projs
+
+**ref_projs:**
+1. n8n - https://n8n-659687081407.australia-southeast1.run.app/webhook/dc6155e4-0178-4aad-bc0e-fcb3d8f1c6c1
+"C:\Users\Cloverly\claude_code\education_sector_automations"
+2. supabase edge functions - check supabase
+3. summary of other builds - mag_build_summary
+
+**mag_build_summary:**
+https://docs.google.com/presentation/d/1aBbI4MXkO5-fMkKDh5H5YxYQnHjYoGqK/edit?slide=id.p2#slide=id.p2
+
+## main_task:
+build me a website. make it really appealing like 'AI & Automations Engineer' like I will build you anything or something like i can automate anything for you. like i make me sound like the one thing that they need to buy back time money and for them to scale without having to hire anyone. like use psychology business tactics in the way you phrase and build it. like my service as 'Julienne Mae Anito, The AI & Automations Expert' is the treasure/prize they get to have a chance at buying. I dont like the failed_site that claude previously built. check my creds_files to get a gauge of my strength.

@@ -1,0 +1,90 @@
+================================================================================
+UPDATE DOCUMENTATION: WEBSITE ROLE UPDATE AND CLOUDFLARE PAGES DEPLOYMENT
+Timestamp: 19/11/26 20:55 (UTC+08:00)
+Workspace: client_finder (C:\Users\Cloverly\claude_code\upskilling\client_finder)
+================================================================================
+
+1. ROLE POSITIONING DECISION
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Evaluated freelance/solo consultancy role titles and business models aligned
+  with the 3-tier offer in 01_offer_and_positioning.md (Audit -> Fixed-Scope
+  Build -> Monthly Partner Retainer) targeting non-technical SMB owners.
+
+* Decision:
+  - Selected final public-facing title: "AI & Business Automation Consultant"
+  - Rationale: Includes high-demand "AI" term, clarifies practical office /
+    business workflow focus ("Business Automation"), and supports strategy +
+    implementation pricing ("Consultant") rather than hourly freelancer framing.
+
+2. WEBSITE UPDATES (website/index.html)
+--------------------------------------------------------------------------------
+* Problem / Context:
+  The landing page previously used "The AI & Automations Expert", "AI &
+  automations engineer", and "Engineer" (portrait caption), and displayed a
+  "Not ready to publish yet" setup reminder banner because `email` and
+  `location` are not yet set in `window.SITE`.
+
+* Technical Changes:
+  - C:\Users\Cloverly\claude_code\upskilling\client_finder\website\index.html:
+    * Updated `<title>` and `<meta name="description">` to "AI & Business
+      Automation Consultant" and clarified "I design and build the systems".
+    * Updated `window.SITE.role` and JS title fallback to
+      "AI & Business Automation Consultant".
+    * Updated header wordmark subtitle (`data-site="role"`), hero eyebrow
+      (wired to `data-site="role"`), and footer role text.
+    * Updated hero lede copy to: "an AI & business automation consultant backed
+      by 7+ years building enterprise software. I design and build the systems..."
+    * Updated portrait `alt` attribute to "Julienne Mae Anito, AI & Business
+      Automation Consultant" and portrait caption from "Engineer" to
+      "Consultant".
+    * Adjusted mobile `@media (max-width: 560px)` `.brand span` font-size
+      (0.58rem), letter-spacing (0.1em), and line-height (1.25) so the longer
+      title wraps cleanly on narrow screens.
+    * Guarded the `#setup` reminder banner with `s.showSetupBanner` so the
+      banner stays hidden in production while the Calendly booking CTA is live.
+    * Retained 7+ years software engineering credentials, B.S. Computer
+      Engineering, and the "Why me" engineering proof section.
+
+3. CLOUDFLARE PAGES DEPLOYMENT & CONFIGURATION
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Evaluated deployment options (WordPress, Cloud Run with Docker, and static
+  hosts). Chose Cloudflare Pages for $0/month static hosting with a clean free
+  subdomain (`https://yen-ai.pages.dev`) and future custom domain support.
+
+* Technical Changes & Troubleshooting:
+  - Installed/ran `wrangler 4.165.0` via `npx.cmd -y wrangler@latest` and
+    completed Cloudflare OAuth login (`wrangler login`).
+  - Note: Initial `wrangler pages project create yen-ai` auto-delegated to
+    Cloudflare Workers Static Assets (`https://yen-ai.client-finder.workers.dev`)
+    and generated `wrangler.jsonc`.
+  - Per user preference for `https://yen-ai.pages.dev`, created the classic
+    Cloudflare Pages project directly using:
+    `npx.cmd -y wrangler@latest pages project create yen-ai --production-branch main --force`
+  - Staged a clean deploy directory containing only `website/index.html`
+    (excluding `website/index_v1_rejected.html.bak`) and deployed to production
+    branch `main`.
+  - C:\Users\Cloverly\claude_code\upskilling\client_finder\wrangler.jsonc:
+    * Updated config for Cloudflare Pages (`name: "yen-ai"`,
+      `pages_build_output_dir: "website"`).
+  - C:\Users\Cloverly\claude_code\upskilling\client_finder\website\.assetsignore:
+    * Created earlier with `*.bak` during the Workers Static Assets step.
+
+4. VERIFICATION & RESULTS
+--------------------------------------------------------------------------------
+* Copy Verification:
+  - Confirmed zero remaining occurrences of "Automations Expert" or
+    "Automations Engineer" in `website/index.html`.
+* Deployment Results:
+  - Cloudflare Pages project `yen-ai` created and deployed (1 file uploaded:
+    `index.html`, excluding `.bak` backup file).
+  - Production URL: https://yen-ai.pages.dev
+  - Direct deployment URL: https://9dfd180d.yen-ai.pages.dev
+* Follow-Up Notes:
+  - Optional: Delete the earlier `yen-ai` Worker
+    (`yen-ai.client-finder.workers.dev`) in Cloudflare Dashboard -> Workers &
+    Pages if not needed.
+  - Future redeploys: Move/remove `website/index_v1_rejected.html.bak` before
+    running `npx wrangler pages deploy website --project-name yen-ai --branch main`.
+================================================================================
