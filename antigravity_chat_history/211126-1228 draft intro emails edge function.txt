@@ -1,0 +1,113 @@
+================================================================================
+UPDATE DOCUMENTATION: DRAFT INTRO EMAILS EDGE FUNCTION & ARCHITECTURE DOCS
+Timestamp: 21/11/26 12:28 (UTC+08:00)
+Workspace: client_finder (C:\Users\Cloverly\claude_code\upskilling\client_finder)
+================================================================================
+
+1. DATABASE MIGRATION FOR GMAIL DRAFT IDEMPOTENCY
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Saving tailored intro emails as Gmail drafts leaves `sent_intro_at` NULL until
+  the operator reviews and sends them manually. Without draft-tracking columns,
+  re-running the drafting Edge Function would create duplicate Gmail drafts.
+
+* Technical Changes:
+  - Created & applied migration:
+    supabase/migrations/20261121_add_draft_columns_to_hiring_leads.sql
+    * Added `drafted_at timestamptz` and `gmail_draft_id text` to both
+      `public.us_sales_hiring_leads` (now 17 columns) and
+      `public.au_hiring_signal_leads` (now 16 columns) to keep tables aligned.
+    * Added partial draft-queue indexes (`idx_us_sales_hiring_leads_draft_queue`
+      and `idx_au_hiring_signal_leads_draft_queue`) scoped to
+      `WHERE enrichment_id = 1 AND sent_intro_at IS NULL`.
+
+2. TAILORED EMAIL INTRO DRAFTING EDGE FUNCTION (draft-intro-emails)
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Needed a Supabase Edge Function matching
+  `prompts/261121_email_intro_edge_function.txt` to query enriched, unsent leads
+  (`enrichment_id = 1 AND sent_intro_at IS NULL`), draft tailored intro emails
+  grounded in each lead's LinkedIn job posting while mirroring the 4 reference
+  emails in `manually_sent_intros/`, and save labeled drafts under
+  `label:sales_leads` in `juliennemaeanito.2026@gmail.com`.
+
+* Technical Changes & Troubleshooting:
+  - Created & deployed:
+    supabase/functions/draft-intro-emails/index.ts (v5, ACTIVE, verify_jwt=true)
+    * Queries `us_sales_hiring_leads` (default) or `au_hiring_signal_leads`
+      where `enrichment_id = 1 AND sent_intro_at IS NULL AND drafted_at IS NULL`
+      (optional `{ table?, limit?, leadIds?, label?, model?, dryRun?, force? }`).
+    * Hydrates live job context from LinkedIn's public guest endpoint
+      (`linkedin.com/jobs-guest/jobs/api/jobPosting/{jobId}`) with retry/backoff
+      on HTTP 429/5xx, direct `job_url` fallback, and best-effort company
+      homepage summary from `https://{company_domain}`.
+    * Initial v1 used Gemini (`gemini-3.8-flash`) with `GEMINI_API_KEY` synced
+      from personal GSM (`--configuration=personal-ai`,
+      `gemini_api_key_ai_and_business_automation`), which authenticated (models
+      list HTTP 200) but returned HTTP 402 `RESOURCE_EXHAUSTED` (depleted AI
+      Studio prepayment credits).
+    * Switched v4/v5 to OpenAI Chat Completions (`gpt-4.1`, strict JSON Schema
+      output) using `OPENAI_API_KEY` synced from local
+      `C:\Users\Cloverly\Downloads\OPENAI_API_KEY.txt` into Supabase Edge
+      Function Secrets (`uwsncuowtzydylfabikj`).
+    * Embedded all 4 manually sent reference emails (`ResQ`, `WOW Recruitment`,
+      `SuitePad`, `Homeland Talent Solutions`) with exact subject style, spaced
+      em-dashes (` — `), en-dashes (`2–3`), proof point (30+ workflow system /
+      ~40 hrs/week saved), and conditional referral line (omitted for CEO/Owner/
+      Sales/Acquisitions/RevOps leaders).
+    * Deterministically builds RFC 2822 `multipart/alternative` MIME messages
+      (`text/plain` + clean HTML wrapping `email_signature/emailsig.v4.html`),
+      refreshes Gmail OAuth via `GMAIL_*` secrets, creates each draft via
+      `POST /gmail/v1/users/me/drafts`, attaches `sales_leads`
+      (`Label_79622622103820681`) via `POST /users/me/messages/{id}/modify`, and
+      stamps `drafted_at` + `gmail_draft_id` on the matched Supabase row.
+
+3. MODULAR SYSTEM ARCHITECTURE DOCUMENTATION
+--------------------------------------------------------------------------------
+* Technical Changes:
+  - Created:
+    system_architecture/system_architecture_email_intro_drafting.md
+    * Documented `draft-intro-emails` (v5) end-to-end with Mermaid flowchart,
+      sequence, and state diagrams, schema/payload contracts, secrets matrix
+      (names only; verified zero live secrets), and operational gotchas.
+  - Updated:
+    system_architecture/system_architecture_lead_enrichment.md
+    * Synced Stage 4 handoff to `draft-intro-emails` (v5), updated column counts
+      (17/16), added `drafted_at` & `gmail_draft_id` to schema/state diagram,
+      and refreshed live volume snapshot.
+
+4. EDGE FUNCTIONS & CRON SCHEDULES
+--------------------------------------------------------------------------------
+* Functions Created / Modified (Project: `uwsncuowtzydylfabikj`):
+  - `draft-intro-emails` (created & deployed v5, ACTIVE, `verify_jwt: true`)
+    Source: supabase/functions/draft-intro-emails/index.ts
+    URL: https://uwsncuowtzydylfabikj.supabase.co/functions/v1/draft-intro-emails
+* Schedules & Crons:
+  - No `pg_cron` schedule attached (manual HTTP POST trigger only; 35 unrelated
+    n8n `pg_cron` jobs on `uwsncuowtzydylfabikj` untouched).
+
+5. VERIFICATION & RESULTS
+--------------------------------------------------------------------------------
+* Schema Verification:
+  - Verified `drafted_at` (`timestamptz`) and `gmail_draft_id` (`text`) present
+    on both `public.us_sales_hiring_leads` (17 cols) and
+    `public.au_hiring_signal_leads` (16 cols).
+* Live Edge Function Run (`draft-intro-emails` v5):
+  - `HTTP 200`, `ok: true`, `queued: 3`, `drafted: 3`, `errors: 0`; 3/3 LinkedIn
+    job descriptions fetched cleanly via `linkedin_guest_api` after retry fix:
+    1) Janice Heffernan (`jheffernan@integrityadvisers.com`) — Integrity
+       Insurance and Financial Services IL, TX (`r7508359562593468606`)
+    2) Bill Randag (`brandag@thspartners.com`) — Trusted Home Service Partners
+       (`r-8937074358075653075`)
+    3) Amy Larko Falanga (`alarko@thelarkogroup.com`) — The Larko Group
+       (`r-2501946236565939458`)
+* Gmail API & DB Verification:
+  - Confirmed all 3 drafts exist in `juliennemaeanito.2026@gmail.com` with
+    `labelIds: ["DRAFT", "Label_79622622103820681"]` (`sales_leads`).
+  - Confirmed `drafted_at` and `gmail_draft_id` stamped on all 3 Supabase rows
+    while `sent_intro_at` remains `NULL`.
+* Idempotency Re-Run Verification:
+  - Second `POST {}` returned `HTTP 200`, `queued: 0`, `drafted: 0`, `errors: 0`.
+* Security Gate:
+  - Scanned `system_architecture/*.md` for API keys/JWTs/OAuth tokens: 0 matches.
+================================================================================

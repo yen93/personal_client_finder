@@ -42,9 +42,9 @@ flowchart TD
         TblAU[("public.au_hiring_signal_leads (11 rows)")]
     end
 
-    subgraph S4["Stage 4: Downstream Outreach Queue"]
-        Queue["Ready Queue: enrichment_id = 1 AND sent_intro_at IS NULL"]
-        Intros["tailored_email_intros/ + Personal Gmail Automation"]
+    subgraph S4["Stage 4: Downstream Outreach Queue (LIVE)"]
+        Queue["Ready Queue: enrichment_id = 1 AND drafted_at IS NULL AND sent_intro_at IS NULL"]
+        Intros["Edge Function: draft-intro-emails (v5) -> Gmail Drafts (label:sales_leads)"]
     end
 
     EF_US -- "Upsert (company, poc_name)" --> TblUS
@@ -54,7 +54,7 @@ flowchart TD
     EF_Enrich --> Parse --> Lookup
     Lookup -- "UPDATE email, enrichment_id (1/2), enriched_at" --> TblUS
     Lookup -- "Optional table='au_hiring_signal_leads'" --> TblAU
-    TblUS -- "3 rows currently ready" --> Queue
+    TblUS -- "3 rows drafted; 0 undrafted" --> Queue
     TblAU -- "0 rows currently ready" --> Queue
     Queue --> Intros
 ```
@@ -142,7 +142,7 @@ sequenceDiagram
 
 ### Shared Enrichment & Outreach Columns (Both Tables)
 
-Both `public.us_sales_hiring_leads` (15 columns; includes `job_location`) and `public.au_hiring_signal_leads` (14 columns) share the exact same enrichment and outreach columns, RLS enforcement (`service_role` only), `(company, poc_name)` unique constraint, and `BEFORE UPDATE` `updated_at` trigger:
+Both `public.us_sales_hiring_leads` (17 columns; includes `job_location`, `drafted_at`, `gmail_draft_id`) and `public.au_hiring_signal_leads` (16 columns; includes `drafted_at`, `gmail_draft_id`) share the exact same enrichment and outreach columns, RLS enforcement (`service_role` only), `(company, poc_name)` unique constraint, and `BEFORE UPDATE` `updated_at` trigger:
 
 | Column | Type | Nullable / Default | Written By | Read By | Purpose |
 | --- | --- | --- | --- | --- | --- |
@@ -158,8 +158,10 @@ Both `public.us_sales_hiring_leads` (15 columns; includes `job_location`) and `p
 | `created_at` | `timestamptz` | `NO` / `now()` | Postgres | Reporting | Initial discovery timestamp |
 | `updated_at` | `timestamptz` | `NO` / `now()` | `BEFORE UPDATE` trigger | Change tracking | Auto-updated on every edit |
 | `enriched_at` | `timestamptz` | `YES` / `NULL` | `enrich-hiring-leads` | Enrichment audit | Timestamp when enrichment ran |
-| `sent_intro_at` | `timestamptz` | `YES` / `NULL` | Manual / future Gmail sender | Outreach queue filter | Timestamp intro email was sent |
-| `email` | `text` | `YES` / `NULL` | `enrich-hiring-leads` | Outreach sender | Verified work email (`NULL` if not found) |
+| `drafted_at` | `timestamptz` | `YES` / `NULL` | `draft-intro-emails` | Draft queue filter | Timestamp Gmail draft was created (prevents duplicates) |
+| `gmail_draft_id` | `text` | `YES` / `NULL` | `draft-intro-emails` | Operator / Gmail sync | Gmail Draft ID (`r...`) created under `label:sales_leads` |
+| `sent_intro_at` | `timestamptz` | `YES` / `NULL` | Manual / future Gmail sync | Outreach queue filter | Timestamp intro email was sent |
+| `email` | `text` | `YES` / `NULL` | `enrich-hiring-leads` | `draft-intro-emails` | Verified work email (`NULL` if not found) |
 | `enrichment_id` | `integer` | `YES` / `NULL` | `enrich-hiring-leads` | Queue segmentation | `NULL` = unenriched, `1` = email found, `2` = checked / no email |
 
 ### Enrichment State Machine
@@ -170,15 +172,16 @@ stateDiagram-v2
     Unenriched --> Enriched_Hit: enrich-hiring-leads (email found -> enrichment_id=1, enriched_at=now)
     Unenriched --> Enriched_Miss: enrich-hiring-leads (email null -> enrichment_id=2, enriched_at=now)
     Enriched_Miss --> Enriched_Hit: Re-enrichment finds email (enrichment_id=1, enriched_at=now)
-    Enriched_Hit --> Intro_Sent: Outreach sent (sent_intro_at=now)
+    Enriched_Hit --> Draft_Created: draft-intro-emails (drafted_at=now, gmail_draft_id set)
+    Draft_Created --> Intro_Sent: Outreach sent (sent_intro_at=now)
 ```
 
 ### Live Snapshot Volume (Queried `2026-11-21`)
 
-| Table | Total | `email` Found (`enrichment_id = 1`) | No Email (`enrichment_id = 2`) | Unenriched (`enrichment_id IS NULL`) | `enriched_at` Set | `sent_intro_at` Set | Ready for Intro (`id=1` & `sent IS NULL`) |
+| Table | Total | `email` Found (`enrichment_id = 1`) | No Email (`enrichment_id = 2`) | Unenriched (`enrichment_id IS NULL`) | Drafted (`drafted_at` Set) | Sent (`sent_intro_at` Set) | Ready to Draft (`id=1`, undrafted, unsent) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `public.us_sales_hiring_leads` | **32** | 6 | 26 | 0 | 8 | 3 | **3** |
-| `public.au_hiring_signal_leads` | **11** | 1 | 0 | 10 | 1 | 1 | **0** |
+| `public.us_sales_hiring_leads` | **32** | 6 | 26 | 0 | 3 | 3 | **0** |
+| `public.au_hiring_signal_leads` | **11** | 1 | 0 | 10 | 0 | 1 | **0** |
 
 ---
 

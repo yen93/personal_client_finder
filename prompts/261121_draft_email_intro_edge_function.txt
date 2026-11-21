@@ -1,0 +1,13 @@
+**leads_to_process:**
+select 
+  *
+from us_sales_hiring_leads
+where enrichment_id = 1
+and sent_intro_at is null
+
+**ref_emails:**
+C:\Users\Cloverly\claude_code\upskilling\client_finder\manually_sent_intros
+
+## main task - create an edge function that will do these steps:
+1. for each lead in leads_to_process, draft a tailored email based on the linkedin job post. see ref_emails and mirror how they are done.
+2. save the drafts in my juliennemaeanito.2026@gmail.com gmail account under label:sales_leads
