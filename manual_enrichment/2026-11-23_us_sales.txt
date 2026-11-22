@@ -1,0 +1,22 @@
+[
+  {
+    "concat": "Anthony DiNardo, Sales Hatch",
+    "email": null
+  },
+  {
+    "concat": "Bill Creekmuir, Pinnacle Search",
+    "email": "bcreekmuir@pinnaclesearch.com"
+  },
+  {
+    "concat": "Leah Zammit, Vayman & Teitelbaum, P.C.",
+    "email": "leah.zammit@vandtlaw.com"
+  },
+  {
+    "concat": "Christopher Miller, Arcadius Health",
+    "email": "christopher.miller@arcadiushealth.com"
+  },
+  {
+    "concat": "Scott Syphers, Broad Reach Partners",
+    "email": "ssyphers@broadreachpartnersllc.com"
+  }
+]

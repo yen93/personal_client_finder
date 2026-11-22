@@ -1,0 +1,6 @@
+1. offer website creation service - Trehøje Døre
+2. lead gen for potential clients that need website enhancements
+3. create automation to find outdated websites
+4. update enrich-hiring-leads: Verify emails before drafting/sending: Run enriched emails through a verifier (e.g., Hunter Verifier, NeverBounce, MillionVerifier, or ZeroBounce) before marking them enrichment_id = 1, especially on Microsoft 365 domains where guessed patterns hard-bounce immediately.
+5. create alternate leads finder edge function from the bounced leads list
+6. create follow up message 1-3 automation for sales_leads 

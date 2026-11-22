@@ -1,0 +1,201 @@
+================================================================================
+UPDATE DOCUMENTATION: DK LEADS PIPELINE, DRAFTING UPGRADES, SEND & BOUNCE TRIAGE, RUN LOGGING
+Timestamp: 23/11/26 02:22 (UTC+08:00)
+Workspace: client_finder (C:\Users\Cloverly\claude_code\upskilling\client_finder)
+================================================================================
+
+1. AUTODOC CUSTOMER EMAILS TABLE, CLEANUP & HEADCOUNT ENRICHMENT
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Needed to import `list.csv` (11,535 raw Danish/European AutoDoc/IT Relation
+  customer rows), clean operational account tags and MSP/vendor email noise,
+  deduplicate to 1 row / 1 customer email per company, and enrich
+  `approx_employee_count` under a strict $3.00 Apify spend cap.
+
+* Technical Changes:
+  - Created & applied migrations:
+    * supabase/migrations/20261121_create_autodoc_customer_emails.sql
+      (created `public.autodoc_customer_emails` with RLS ON and indexes on
+      `auto_doc_asset_id`, `nav_customer_id`, and non-null `email`).
+    * supabase/migrations/20261121_add_draft_index_to_autodoc_customer_emails.sql
+      (documented `approx_employee_count`, `industry`, `drafted_at`,
+      `gmail_draft_id` and added partial queue index
+      `idx_autodoc_customer_emails_draft_queue`).
+  - Imported all 11,535 rows (`utf-8-sig`, trimmed, literal `"NULL"`/blanks ->
+    SQL `NULL`), then ran atomic cleanup/deduplication:
+    * Stripped operational tags (`DO NOT USE`, `BRUG/USE <id>`, `UNDER KONKURS`,
+      `BANKRUPTCY`, `spærret`, `OPHØRT`, `OPLØST`, `DEBT COLLECTION`,
+      `KONTAKT ACCOUNTING`, `Hypervisor`, `(direct)`) across 186 names,
+      collapsing 27 duplicate account groups.
+    * Filtered out third-party MSP/ERP/telecom/printer vendor email domains
+      (`itm8.com`, `itrelation.dk`, `atea.dk`, `canon.dk`, `eg.dk`, etc. — while
+      preserving own-company domains) and non-email notes.
+    * Retained 1 row / at most 1 clean email per `lower(name)`: 11,535 -> 2,454
+      unique rows (`1,355` with clean email, `1,099` with `email IS NULL`) and
+      enforced `idx_autodoc_customer_emails_lower_name` UNIQUE index.
+  - Created & deployed `enrich-autodoc-employees` (v3, ACTIVE, verify_jwt=true):
+    * Source: supabase/functions/enrich-autodoc-employees/index.ts
+    * Enriched 342 email-bearing companies via
+      `automation-lab~linkedin-company-scraper` (preferred exact `employeeCount`,
+      range midpoint fallback, strict domain/European country scoring) for
+      ~$1.32 Apify spend (well below $3.00 cap; live meter $1.41 / $19.00).
+
+2. DK / EUROPEAN LEADS INTRO DRAFTING (`draft-intro-emails-dk`)
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Needed a dedicated Edge Function matching
+  `prompts/261121_draft_email_intro_edge_function_dk_leads.txt` to draft concise
+  (~half-length) intro emails for `public.autodoc_customer_emails` grounded in
+  each company's nature of business and isolated into its own Gmail label.
+
+* Technical Changes:
+  - Created & deployed `draft-intro-emails-dk` (v1 -> v5, ACTIVE, verify_jwt=true):
+    * Source: supabase/functions/draft-intro-emails-dk/index.ts
+    * Queries `public.autodoc_customer_emails WHERE email IS NOT NULL AND drafted_at IS NULL`
+      (optional `limit`, `leadIds`, `onlyEnriched`, `minEmployees`, `maxEmployees`,
+      `label`, `model`, `dryRun`, `force`).
+    * Hydrates live company homepage (`https://{domain}` + `www.` fallback, reads
+      Danish/English), derives safe greetings from email local-part (`Hi Morten,`,
+      `Hi [Company] team,`, or `Hi there,` for initials), drafts ~75-100 word
+      3-paragraph intro emails with a European discovery hook (retaining the exact
+      v2 prompt style used for `Trehøje Døre A/S`) via OpenAI `gpt-4.1`, attaches
+      `emailsig.v4.html`, backfills `industry` when null, and stamps `drafted_at`
+      + `gmail_draft_id`.
+    * Updated `DEFAULT_LABEL_NAME` to `dk_leads` (`Label_4897757153022453021`) in
+      v5 and transferred the 2 existing DK test drafts (`Advicer` `r1689643320746651605`
+      and `Trehøje Døre A/S` `r106169469293907930`) from `sales_leads` to `dk_leads`.
+
+3. US/AU INTRO DRAFTING COPY & IN-PLACE UPDATE UPGRADE (`draft-intro-emails`)
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Wanted `draft-intro-emails` to produce shorter (~half-length, 80-100 word,
+  3-paragraph) job-tailored emails with a confident, professional freelancer
+  voice, industry-agnostic proof (`"for one of my clients"` instead of
+  `"for a travel company"`), proven B2B persuasion (loss aversion + reciprocity
+  + low-friction call-or-walkthrough choice), and zero duplicate drafts on
+  re-runs.
+
+* Technical Changes:
+  - Updated & deployed `draft-intro-emails` (v5 -> v9, ACTIVE, verify_jwt=true):
+    * Source: supabase/functions/draft-intro-emails/index.ts
+    * Tightened OpenAI JSON schema & system prompt to 3 short paragraphs
+      (~80-100 words), dropped `"travel company"` in favor of `"for one of my
+      clients"` (~40 hrs/week saved), and added `body_word_count` + `plain_preview`
+      to responses.
+    * Added in-place Gmail draft update (`PUT /users/me/drafts/{existingDraftId}`
+      with `POST` fallback on 404) when `force: true` and `gmail_draft_id` exists.
+    * Re-drafted all 3 existing `us_sales_hiring_leads` drafts in-place (Janice
+      Heffernan, Bill Randag, Amy Larko Falanga) with 0 duplicates.
+
+4. AUTOMATED DRAFT DISPATCH, `thread_id`, `public.status` & BOUNCE TRIAGE
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Needed an Edge Function to dispatch reviewed Gmail drafts under
+  `label:sales_leads`, track `sent_intro_at` + `thread_id`, normalize lead
+  lifecycle states via a `public.status` lookup table, detect hard bounces (such
+  as Microsoft 365 `550 5.4.1` DBEB), update `status`, and quarantine bounced
+  threads into `label:bounced_leads`.
+
+* Technical Changes:
+  - Created & applied migrations:
+    * supabase/migrations/20261123_add_thread_id_to_hiring_leads.sql
+      (ensured `sent_intro_at` and added `thread_id text` + partial indexes on
+      `us_sales_hiring_leads` and `au_hiring_signal_leads`).
+    * supabase/migrations/20261123_create_status_table_and_column.sql
+      (created `public.status` with `id int PK`, `created_at`, `description`
+      seeded 1..6: `1: new lead`, `2: enriched`, `3: intro drafted`,
+      `4: intro sent`, `5: lead responded`, `6: intro bounced`; added `status`
+      FK column + indexes on `us_sales_hiring_leads` and `au_hiring_signal_leads`
+      and backfilled existing rows).
+  - Created & deployed `send-drafted-emails` (v1 -> v4, ACTIVE, verify_jwt=true):
+    * Source: supabase/functions/send-drafted-emails/index.ts
+    * Lists & strictly verifies drafts carrying target `label` (default
+      `sales_leads`), sends up to `limit` (default 5, max 20) with `delayMs`
+      (default 2000ms), keeps `sales_leads` attached, and stamps `sent_intro_at`,
+      `thread_id`, and `status = 4`.
+    * Waits `bounceCheckDelayMs` (default 10s), inspects sent threads +
+      `from:(mailer-daemon OR postmaster)` DSN search, updates `status = 6`
+      (`intro bounced`) or `5` (`lead responded`), and transfers bounced threads
+      to `label:bounced_leads` (`Label_4417341710530345958`, removing `sales_leads`).
+    * Supports standalone `POST { action: "check_bounces", limit?, leadIds? }`.
+  - Backfilled `thread_id` from Gmail `SENT` for 3 earlier manually-sent US leads
+    (ResQ, Homeland Talent Solutions, SuitePad) plus the 3 newly sent leads.
+
+5. US CLIENT FINDER RUN LOGGING & LIVE GEORGIA RUN
+--------------------------------------------------------------------------------
+* Problem / Context:
+  Needed persistent run-level observability for `us-sales-hiring-leads` (state
+  scraped, funnel counts, Apify spend, completion status) that handles concurrent
+  async webhooks cleanly without race conditions.
+
+* Technical Changes:
+  - Created & applied migration:
+    * supabase/migrations/20261123_create_us_sales_hiring_leads_runs.sql
+      (created 34-column `public.us_sales_hiring_leads_runs` table with RLS ON,
+      indexes on `(state, started_at DESC)`, `(started_at DESC)`, `(status)`,
+      and `SECURITY DEFINER` atomic RPC `public.record_us_sales_run_progress`).
+  - Updated & deployed `us-sales-hiring-leads` (v6 -> v8, ACTIVE, verify_jwt=true):
+    * Source: supabase/functions/us-sales-hiring-leads/index.ts
+    * Logs every async & sync invocation (`state`, config, Apify job/POC run IDs,
+      `jobs_scraped`, `companies_discovered`, `leads_found`, `leads_saved`,
+      `leads_new`, `skipped_no_poc`, `apify_cost_usd`, `duration_seconds`),
+      handles failed/aborted/timed-out webhooks, and fixed Apify webhook enum
+      (`ACTOR.RUN.TIMED-OUT` -> `ACTOR.RUN.TIMED_OUT`).
+  - Updated `.agents/skills/us-client-finder/scripts/run_us_client_finder.py` so
+    `--status-only` also displays `recent_runs` from `us_sales_hiring_leads_runs`.
+  - Executed full Georgia cycle:
+    * Ran `/us-client-finder` for Georgia (`rowsPerRole=75`, run log
+      `c4afef09-b5e5-4122-b03a-5eaf091afc94`): 300 jobs -> 18 SMBs -> 5 new leads
+      for `$0.39472` (`status = completed`, 349s).
+    * Ran `enrich-hiring-leads` with `manual_enrichment/2026-11-23_us_sales.txt`
+      (5/5 updated: 4 with email, 1 no email).
+    * Ran `draft-intro-emails` (4/4 drafted under `label:sales_leads`, 4/4
+      hydrated via `linkedin_guest_api`).
+    * Ran `send-drafted-emails` (4/4 sent, `sent_intro_at` + `thread_id` stamped)
+      and `check_bounces` (caught Arcadius Health `550 5.4.1` bounce -> set
+      `status = 6` and transferred thread `1a2044d89d8daa88` to `label:bounced_leads`).
+
+6. MODULAR SYSTEM ARCHITECTURE DOCUMENTATION
+--------------------------------------------------------------------------------
+* Files Updated / Created (all scanned: 0 live secrets, valid Mermaid diagrams):
+  - Updated: system_architecture/4_system_architecture_email_intro_drafting.md
+    (synced to `draft-intro-emails` v9 & downstream `send-drafted-emails`).
+  - Created & Updated: system_architecture/5_system_architecture_draft_intro_emails_dk.md
+    (synced to `draft-intro-emails-dk` v5 & `label:dk_leads`).
+  - Created & Updated: system_architecture/6_system_architecture_send_drafted_emails.md
+    (synced to `send-drafted-emails` v4, `public.status`, `thread_id`, and
+    `label:bounced_leads` thread transfer).
+  - Created: system_architecture/7_system_architecture_us_sales_hiring_leads.md
+    (dedicated deep-dive for `us-sales-hiring-leads` v8 &
+    `public.us_sales_hiring_leads_runs`).
+
+7. EDGE FUNCTIONS & CRON SCHEDULES (PROJECT: `uwsncuowtzydylfabikj`)
+--------------------------------------------------------------------------------
+* Active Functions (7 total, all ACTIVE, `verify_jwt: true`):
+  - `hiring-signal-leads` (v9) — supabase/functions/hiring-signal-leads/index.ts
+  - `us-sales-hiring-leads` (v8) — supabase/functions/us-sales-hiring-leads/index.ts
+  - `enrich-hiring-leads` (v4) — supabase/functions/enrich-hiring-leads/index.ts
+  - `draft-intro-emails` (v9) — supabase/functions/draft-intro-emails/index.ts
+  - `enrich-autodoc-employees` (v3) — supabase/functions/enrich-autodoc-employees/index.ts
+  - `draft-intro-emails-dk` (v5) — supabase/functions/draft-intro-emails-dk/index.ts
+  - `send-drafted-emails` (v4) — supabase/functions/send-drafted-emails/index.ts
+* Schedules & Crons:
+  - 0 `pg_cron` schedules attached to Client Finder functions (manual HTTP POST
+    triggers only; 35 unrelated n8n `pg_cron` jobs on `uwsncuowtzydylfabikj`
+    remain untouched).
+
+8. VERIFICATION & LIVE SNAPSHOT RESULTS
+--------------------------------------------------------------------------------
+* `public.autodoc_customer_emails`: 2,454 unique companies (1,355 with email,
+  342 headcount-enriched, 2 drafted under `label:dk_leads`).
+* `public.us_sales_hiring_leads` (19 cols): 37 total rows across NY, FL, IL, TX,
+  GA, CA, MO — status breakdown: 27 `enriched` (`2`), 9 `intro sent` (`4`),
+  1 `intro bounced` (`6` — Arcadius Health, thread moved to `label:bounced_leads`).
+  All 10/10 sent rows have `sent_intro_at` and `thread_id` populated.
+* `public.us_sales_hiring_leads_runs` (34 cols): 1 completed Georgia run logged
+  (`status = completed`, `jobs_scraped = 300`, `companies_discovered = 18`,
+  `leads_new = 5`, `apify_cost_usd = 0.39472`).
+* Gmail labels verified live: `sales_leads` (`Label_79622622103820681`, 0 queued
+  drafts), `dk_leads` (`Label_4897757153022453021`, 2 queued drafts),
+  `bounced_leads` (`Label_4417341710530345958`, 1 bounced thread).
+================================================================================

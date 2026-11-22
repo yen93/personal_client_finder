@@ -120,9 +120,16 @@ def get_table_summary(access_token: str) -> dict[str, Any]:
         "SELECT COALESCE(job_location, '(unknown)') AS job_location, count(*)::int AS cnt "
         "FROM public.us_sales_hiring_leads GROUP BY job_location ORDER BY cnt DESC LIMIT 20;",
     )
+    recent_runs = run_sql(
+        access_token,
+        "SELECT id, state, mode, dry_run, status, jobs_scraped, companies_discovered, "
+        "leads_found, leads_saved, leads_new, apify_cost_usd, duration_seconds, started_at, completed_at "
+        "FROM public.us_sales_hiring_leads_runs ORDER BY started_at DESC LIMIT 10;",
+    )
     return {
         "stats": counts[0] if counts else {},
         "top_locations": locations,
+        "recent_runs": recent_runs,
     }
 
 

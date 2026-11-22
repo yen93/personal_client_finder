@@ -273,7 +273,12 @@ async function startApifyActorAsync(
     toBase64Utf8(
       JSON.stringify([
         {
-          eventTypes: ["ACTOR.RUN.SUCCEEDED"],
+          eventTypes: [
+            "ACTOR.RUN.SUCCEEDED",
+            "ACTOR.RUN.FAILED",
+            "ACTOR.RUN.TIMED_OUT",
+            "ACTOR.RUN.ABORTED",
+          ],
           requestUrl: webhook.requestUrl,
           headersTemplate: webhook.headersTemplate,
           payloadTemplate: webhook.payloadTemplate,
@@ -553,8 +558,8 @@ async function upsertLeads(
   resolvedLeads: ResolvedLead[],
   supabaseUrl: string,
   serviceRoleKey: string,
-): Promise<Record<string, unknown>[]> {
-  if (resolvedLeads.length === 0) return [];
+): Promise<{ savedRows: Record<string, unknown>[]; newCount: number }> {
+  if (resolvedLeads.length === 0) return { savedRows: [], newCount: 0 };
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
@@ -566,13 +571,146 @@ async function upsertLeads(
       ignoreDuplicates: false,
     })
     .select(
-      "id, company, poc_name, poc_role, hiring_role, job_location, company_domain",
+      "id, company, poc_name, poc_role, hiring_role, job_location, company_domain, created_at, updated_at",
     );
 
   if (error) {
     throw new Error(`Supabase upsert failed: ${error.message}`);
   }
-  return (data ?? []) as Record<string, unknown>[];
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const newCount = rows.filter(
+    (r) =>
+      typeof r.created_at === "string" &&
+      typeof r.updated_at === "string" &&
+      r.created_at === r.updated_at,
+  ).length;
+  return { savedRows: rows, newCount };
+}
+
+function extractUsageUsd(resource: Record<string, unknown>): number {
+  const raw = resource.usageTotalUsd;
+  return typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : 0;
+}
+
+async function createRunLog(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  params: {
+    state: string;
+    locationQuery: string;
+    mode: "async" | "sync";
+    dryRun: boolean;
+    roles: string[];
+    rowsPerRole: number;
+    publishedAt: string;
+    cfg: FilterConfig;
+    expectedJobRuns: number;
+  },
+): Promise<string | null> {
+  try {
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false },
+    });
+    const { data, error } = await supabase
+      .from("us_sales_hiring_leads_runs")
+      .insert({
+        state: params.state,
+        location_query: params.locationQuery,
+        mode: params.mode,
+        dry_run: params.dryRun,
+        status: "running",
+        roles: params.roles,
+        rows_per_role: params.rowsPerRole,
+        published_at: params.publishedAt,
+        min_employees: params.cfg.minEmployees,
+        max_employees: params.cfg.maxEmployees,
+        max_companies: params.cfg.maxCompanies,
+        expected_job_runs: params.expectedJobRuns,
+        job_actor_id: params.cfg.jobActorId,
+        leads_actor_id: params.cfg.leadsActorId,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      console.error("Failed to create run log:", error.message);
+      return null;
+    }
+    return (data?.id as string) ?? null;
+  } catch (err) {
+    console.error("Exception creating run log:", err);
+    return null;
+  }
+}
+
+async function setRunJobIds(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  runLogId: string | null,
+  jobRunIds: string[],
+): Promise<void> {
+  if (!runLogId || jobRunIds.length === 0) return;
+  try {
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false },
+    });
+    await supabase
+      .from("us_sales_hiring_leads_runs")
+      .update({ apify_job_run_ids: jobRunIds.filter(Boolean) })
+      .eq("id", runLogId);
+  } catch (err) {
+    console.error("Failed to store apify_job_run_ids:", err);
+  }
+}
+
+async function recordRunProgress(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  runLogId: string | null,
+  deltas: {
+    completedJobRuns?: number;
+    expectedPocRuns?: number;
+    completedPocRuns?: number;
+    jobsScraped?: number;
+    companiesDiscovered?: number;
+    pocItemsFetched?: number;
+    leadsFound?: number;
+    leadsSaved?: number;
+    leadsNew?: number;
+    skippedNoPoc?: number;
+    apifyCostUsd?: number;
+    pocRunId?: string | null;
+    errorMessage?: string | null;
+    forceComplete?: boolean;
+  },
+): Promise<void> {
+  if (!runLogId) return;
+  try {
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false },
+    });
+    const { error } = await supabase.rpc("record_us_sales_run_progress", {
+      p_run_id: runLogId,
+      p_completed_job_runs_delta: deltas.completedJobRuns ?? 0,
+      p_expected_poc_runs_delta: deltas.expectedPocRuns ?? 0,
+      p_completed_poc_runs_delta: deltas.completedPocRuns ?? 0,
+      p_jobs_scraped_delta: deltas.jobsScraped ?? 0,
+      p_companies_discovered_delta: deltas.companiesDiscovered ?? 0,
+      p_poc_items_fetched_delta: deltas.pocItemsFetched ?? 0,
+      p_leads_found_delta: deltas.leadsFound ?? 0,
+      p_leads_saved_delta: deltas.leadsSaved ?? 0,
+      p_leads_new_delta: deltas.leadsNew ?? 0,
+      p_skipped_no_poc_delta: deltas.skippedNoPoc ?? 0,
+      p_apify_cost_usd_delta: deltas.apifyCostUsd ?? 0,
+      p_poc_run_id: deltas.pocRunId ?? null,
+      p_error_message: deltas.errorMessage ?? null,
+      p_force_complete: deltas.forceComplete ?? false,
+    });
+    if (error) {
+      console.error("record_us_sales_run_progress RPC failed:", error.message);
+    }
+  } catch (err) {
+    console.error("Exception in recordRunProgress:", err);
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -591,6 +729,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       function: "us-sales-hiring-leads",
       table: "public.us_sales_hiring_leads",
+      runs_table: "public.us_sales_hiring_leads_runs",
       country: TARGET_COUNTRY,
       default_mode: "async",
       has_apify_token: Boolean(apifyToken),
@@ -636,13 +775,35 @@ Deno.serve(async (req: Request) => {
     // =========================================================================
     if (stage === "jobs_done") {
       const resource = (rawBody.resource ?? {}) as Record<string, unknown>;
+      const runStatus = asNonEmptyString(resource.status) ?? "SUCCEEDED";
+      const runLogId = asNonEmptyString(rawBody.runLogId);
       const jobsDatasetId =
         asNonEmptyString(resource.defaultDatasetId) ??
         asNonEmptyString(rawBody.jobsDatasetId);
       const searchedRole = asNonEmptyString(rawBody.searchedRole) ?? "SDR";
       const cfg = (rawBody.config ?? {}) as FilterConfig;
+      const usageUsd = extractUsageUsd(resource);
+
+      if (runStatus !== "SUCCEEDED") {
+        await recordRunProgress(supabaseUrl, serviceRoleKey, runLogId, {
+          completedJobRuns: 1,
+          apifyCostUsd: usageUsd,
+          errorMessage: `jobs_done (${searchedRole}): Apify run ${String(resource.id ?? "")} ended with status ${runStatus}`,
+        });
+        return jsonResponse({
+          ok: false,
+          stage: "jobs_done",
+          run_log_id: runLogId,
+          apify_status: runStatus,
+        });
+      }
 
       if (!jobsDatasetId) {
+        await recordRunProgress(supabaseUrl, serviceRoleKey, runLogId, {
+          completedJobRuns: 1,
+          apifyCostUsd: usageUsd,
+          errorMessage: `jobs_done (${searchedRole}): Missing jobsDatasetId`,
+        });
         return jsonResponse({ ok: false, error: "Missing jobsDatasetId" }, 400);
       }
 
@@ -650,9 +811,16 @@ Deno.serve(async (req: Request) => {
       const discovered = extractDiscoveredCompanies(jobItems, searchedRole, cfg);
 
       if (discovered.length === 0) {
+        await recordRunProgress(supabaseUrl, serviceRoleKey, runLogId, {
+          completedJobRuns: 1,
+          jobsScraped: jobItems.length,
+          companiesDiscovered: 0,
+          apifyCostUsd: usageUsd,
+        });
         return jsonResponse({
           ok: true,
           stage: "jobs_done",
+          run_log_id: runLogId,
           jobs_scraped: jobItems.length,
           companies_discovered: 0,
         });
@@ -678,8 +846,9 @@ Deno.serve(async (req: Request) => {
             fetch_count: Math.min(domains.length * 4, 150),
           };
 
-      // Note: payloadTemplate stays tiny by passing only jobsDatasetId + config
+      // Note: payloadTemplate stays tiny by passing only runLogId + jobsDatasetId + config
       const payloadTemplate = `{
+        "runLogId": ${JSON.stringify(runLogId)},
         "jobsDatasetId": ${JSON.stringify(jobsDatasetId)},
         "searchedRole": ${JSON.stringify(searchedRole)},
         "config": ${JSON.stringify(cfg)},
@@ -697,9 +866,19 @@ Deno.serve(async (req: Request) => {
         },
       );
 
+      await recordRunProgress(supabaseUrl, serviceRoleKey, runLogId, {
+        completedJobRuns: 1,
+        expectedPocRuns: 1,
+        jobsScraped: jobItems.length,
+        companiesDiscovered: discovered.length,
+        apifyCostUsd: usageUsd,
+        pocRunId: pocRun.runId,
+      });
+
       return jsonResponse({
         ok: true,
         stage: "jobs_done",
+        run_log_id: runLogId,
         jobs_scraped: jobItems.length,
         companies_discovered: discovered.length,
         poc_run_id: pocRun.runId,
@@ -711,14 +890,36 @@ Deno.serve(async (req: Request) => {
     // =========================================================================
     if (stage === "pocs_done") {
       const resource = (rawBody.resource ?? {}) as Record<string, unknown>;
+      const runStatus = asNonEmptyString(resource.status) ?? "SUCCEEDED";
+      const runLogId = asNonEmptyString(rawBody.runLogId);
       const pocsDatasetId =
         asNonEmptyString(resource.defaultDatasetId) ??
         asNonEmptyString(rawBody.pocsDatasetId);
       const jobsDatasetId = asNonEmptyString(rawBody.jobsDatasetId);
       const searchedRole = asNonEmptyString(rawBody.searchedRole) ?? "SDR";
       const cfg = (rawBody.config ?? {}) as FilterConfig;
+      const usageUsd = extractUsageUsd(resource);
+
+      if (runStatus !== "SUCCEEDED") {
+        await recordRunProgress(supabaseUrl, serviceRoleKey, runLogId, {
+          completedPocRuns: 1,
+          apifyCostUsd: usageUsd,
+          errorMessage: `pocs_done (${searchedRole}): Apify run ${String(resource.id ?? "")} ended with status ${runStatus}`,
+        });
+        return jsonResponse({
+          ok: false,
+          stage: "pocs_done",
+          run_log_id: runLogId,
+          apify_status: runStatus,
+        });
+      }
 
       if (!jobsDatasetId || !pocsDatasetId) {
+        await recordRunProgress(supabaseUrl, serviceRoleKey, runLogId, {
+          completedPocRuns: 1,
+          apifyCostUsd: usageUsd,
+          errorMessage: `pocs_done (${searchedRole}): Missing jobsDatasetId or pocsDatasetId`,
+        });
         return jsonResponse(
           { ok: false, error: "Missing jobsDatasetId or pocsDatasetId" },
           400,
@@ -737,17 +938,29 @@ Deno.serve(async (req: Request) => {
         cfg,
       );
 
-      const savedRows = cfg.dryRun
-        ? []
+      const { savedRows, newCount } = cfg.dryRun
+        ? { savedRows: [], newCount: 0 }
         : await upsertLeads(resolvedLeads, supabaseUrl, serviceRoleKey);
+
+      await recordRunProgress(supabaseUrl, serviceRoleKey, runLogId, {
+        completedPocRuns: 1,
+        pocItemsFetched: pocItems.length,
+        leadsFound: resolvedLeads.length,
+        leadsSaved: savedRows.length,
+        leadsNew: newCount,
+        skippedNoPoc,
+        apifyCostUsd: usageUsd,
+      });
 
       return jsonResponse({
         ok: true,
         stage: "pocs_done",
+        run_log_id: runLogId,
         companies_discovered: discovered.length,
         poc_items_fetched: pocItems.length,
         leads_resolved: resolvedLeads.length,
         saved_count: savedRows.length,
+        new_count: newCount,
         skipped_no_poc: skippedNoPoc,
       });
     }
@@ -764,6 +977,9 @@ Deno.serve(async (req: Request) => {
         : DEFAULT_SALES_ROLES;
 
     const rawUsLoc = asNonEmptyString(body.usLocation);
+    const stateLabel = rawUsLoc
+      ? rawUsLoc.replace(/,\s*(united states|usa|us)\s*$/i, "").trim() || rawUsLoc
+      : TARGET_COUNTRY;
     const location = rawUsLoc
       ? /united states|\busa\b|\bus\b/i.test(rawUsLoc)
         ? rawUsLoc
@@ -790,38 +1006,69 @@ Deno.serve(async (req: Request) => {
       dryRun: Boolean(body.dryRun),
     };
 
-    if (mode === "async") {
-      const startedRuns = await Promise.all(
-        roles.map(async (role) => {
-          const payloadTemplate = `{
-            "searchedRole": ${JSON.stringify(role)},
-            "config": ${JSON.stringify(cfg)},
-            "resource": {{resource}}
-          }`;
+    const runLogId = await createRunLog(supabaseUrl, serviceRoleKey, {
+      state: stateLabel,
+      locationQuery: location,
+      mode,
+      dryRun: cfg.dryRun,
+      roles,
+      rowsPerRole,
+      publishedAt,
+      cfg,
+      expectedJobRuns: roles.length,
+    });
 
-          const started = await startApifyActorAsync(
-            cfg.jobActorId,
-            {
-              title: role,
-              location,
-              rows: rowsPerRole,
-              publishedAt,
-            },
-            apifyToken,
-            {
-              requestUrl: `${selfUrl}?stage=jobs_done`,
-              headersTemplate: webhookHeaders,
-              payloadTemplate,
-            },
-          );
-          return { role, location, rows: rowsPerRole, ...started };
-        }),
+    if (mode === "async") {
+      let startedRuns;
+      try {
+        startedRuns = await Promise.all(
+          roles.map(async (role) => {
+            const payloadTemplate = `{
+              "runLogId": ${JSON.stringify(runLogId)},
+              "searchedRole": ${JSON.stringify(role)},
+              "config": ${JSON.stringify(cfg)},
+              "resource": {{resource}}
+            }`;
+
+            const started = await startApifyActorAsync(
+              cfg.jobActorId,
+              {
+                title: role,
+                location,
+                rows: rowsPerRole,
+                publishedAt,
+              },
+              apifyToken,
+              {
+                requestUrl: `${selfUrl}?stage=jobs_done`,
+                headersTemplate: webhookHeaders,
+                payloadTemplate,
+              },
+            );
+            return { role, location, rows: rowsPerRole, ...started };
+          }),
+        );
+      } catch (startErr) {
+        await recordRunProgress(supabaseUrl, serviceRoleKey, runLogId, {
+          errorMessage: startErr instanceof Error ? startErr.message : String(startErr),
+          forceComplete: true,
+        });
+        throw startErr;
+      }
+
+      await setRunJobIds(
+        supabaseUrl,
+        serviceRoleKey,
+        runLogId,
+        startedRuns.map((r) => r.runId),
       );
 
       return jsonResponse(
         {
           ok: true,
           mode: "async",
+          run_log_id: runLogId,
+          state: stateLabel,
           message:
             "Started async Apify job scrapes. Results will automatically flow through jobs_done -> pocs_done and upsert into public.us_sales_hiring_leads.",
           location,
@@ -846,12 +1093,14 @@ Deno.serve(async (req: Request) => {
 
     const jobErrors: string[] = [];
     const allCompaniesMap = new Map<string, DiscoveredCompany>();
+    let totalJobsScraped = 0;
 
     for (const r of jobRuns) {
       if (r.status === "rejected") {
         jobErrors.push(String(r.reason));
         continue;
       }
+      totalJobsScraped += r.value.items.length;
       const discovered = extractDiscoveredCompanies(r.value.items, r.value.role, cfg);
       for (const c of discovered) {
         const key = c.domain ?? c.normalizedCompany;
@@ -863,13 +1112,24 @@ Deno.serve(async (req: Request) => {
 
     const discoveredCompanies = Array.from(allCompaniesMap.values());
     if (discoveredCompanies.length === 0) {
+      await recordRunProgress(supabaseUrl, serviceRoleKey, runLogId, {
+        completedJobRuns: roles.length,
+        jobsScraped: totalJobsScraped,
+        companiesDiscovered: 0,
+        errorMessage: jobErrors.length > 0 ? jobErrors.join(" | ") : null,
+        forceComplete: true,
+      });
       return jsonResponse({
         ok: true,
         mode: "sync",
+        run_log_id: runLogId,
+        state: stateLabel,
         dry_run: cfg.dryRun,
         location,
+        jobs_scraped: totalJobsScraped,
         companies_discovered: 0,
         saved_count: 0,
+        new_count: 0,
         job_errors: jobErrors,
         leads: [],
       });
@@ -912,18 +1172,38 @@ Deno.serve(async (req: Request) => {
       cfg,
     );
 
-    const savedRows = cfg.dryRun
-      ? []
+    const { savedRows, newCount } = cfg.dryRun
+      ? { savedRows: [], newCount: 0 }
       : await upsertLeads(resolvedLeads, supabaseUrl, serviceRoleKey);
+
+    const allErrors = [...jobErrors, ...pocErrors];
+    await recordRunProgress(supabaseUrl, serviceRoleKey, runLogId, {
+      completedJobRuns: roles.length,
+      expectedPocRuns: 1,
+      completedPocRuns: 1,
+      jobsScraped: totalJobsScraped,
+      companiesDiscovered: discoveredCompanies.length,
+      pocItemsFetched: pocItems.length,
+      leadsFound: resolvedLeads.length,
+      leadsSaved: savedRows.length,
+      leadsNew: newCount,
+      skippedNoPoc,
+      errorMessage: allErrors.length > 0 ? allErrors.join(" | ") : null,
+      forceComplete: true,
+    });
 
     return jsonResponse({
       ok: true,
       mode: "sync",
+      run_log_id: runLogId,
+      state: stateLabel,
       dry_run: cfg.dryRun,
       location,
+      jobs_scraped: totalJobsScraped,
       companies_discovered: discoveredCompanies.length,
       leads_resolved: resolvedLeads.length,
       saved_count: savedRows.length,
+      new_count: newCount,
       skipped_no_poc: skippedNoPoc,
       job_errors: jobErrors,
       poc_errors: pocErrors,

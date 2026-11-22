@@ -1,0 +1,13 @@
+**leads_to_process:**
+select 
+  *
+from autodoc_customer_emails
+where drafted_at is null
+
+**ref_emails:**
+C:\Users\Cloverly\claude_code\upskilling\client_finder\manually_sent_intros
+
+## main task - create an edge function that will do these steps:
+1. for each lead in leads_to_process, draft a tailored email based on the company's nature of business. see ref_emails and mirror how they are done. but keep it shorter. about half the email length of the ref_emails.
+2. save the drafts in my juliennemaeanito.2026@gmail.com gmail account under label:sales_leads
+3. update drafted_at and gmail_draft_id

@@ -37,108 +37,57 @@ const DRAFT_EMAIL_JSON_SCHEMA = {
     subject: {
       type: "string",
       description:
-        "Short, natural cold email subject line (5-10 words), mirroring the reference subjects like 'Quick idea re: your Sr. BDR hire at ResQ' or 'Quick idea for Homeland Talent Solutions'. No emojis, no exclamation marks, no clickbait.",
+        "Short, crisp, curiosity-sparking subject line (4-7 words), e.g. 'Quick idea re: your BDR hire' or 'Saving your BD team 10+ hrs/wk'. No emojis, no exclamation marks, no clickbait.",
     },
     greeting: {
       type: "string",
-      description: "First-name greeting line, e.g. 'Hi Amy,'.",
+      description: "Clean first-name greeting line, e.g. 'Hi Amy,'.",
     },
     paragraphs: {
       type: "array",
       items: { type: "string" },
       description:
-        "Exactly 4 concise plain-text body paragraphs (no HTML, no greeting, no sign-off, no links) mirroring the tone, cadence, and structure of the 4 reference emails.",
+        "Exactly 3 tight, polished plain-text body paragraphs (80-100 words TOTAL across all 3 paragraphs). No HTML, no greeting, no sign-off, no links.",
     },
     closing_question: {
       type: "string",
-      description: "Short closing nudge line, typically 'Worth a look?'.",
+      description: "Low-friction, autonomy-preserving closing nudge, e.g. 'Open to a quick look?' or 'Worth a quick look?'.",
     },
   },
   required: ["subject", "greeting", "paragraphs", "closing_question"],
 };
 
-const SYSTEM_INSTRUCTION = `You are writing cold intro emails on behalf of Julienne Mae Anito, an AI & Business Automation Consultant.
-Your job is to mirror the exact voice, structure, warmth, length, and consultative style of Julienne's manually sent reference emails below — tailored specifically to the lead's LinkedIn job posting and company.
+const SYSTEM_INSTRUCTION = `You are writing short, high-converting cold intro emails on behalf of Julienne Mae Anito, an independent AI & Business Automation Consultant.
+Your job is to write a sharp, polished, genuinely human message from an independent specialist offering a clear win to a potential client — tailored to their LinkedIn job post — while keeping the email **strictly ~80–100 words across 3 tight paragraphs** (about half the length of a traditional cold email).
 
-CRITICAL RULES:
-1. Mirror the 4 reference emails closely in tone, rhythm, paragraph structure, and word count (~150-200 words across the 4 paragraphs).
-2. Ground Paragraph 1 in real, concrete details from the provided LinkedIn job post (and company website context if provided): open naturally like "I saw on LinkedIn that ..." or "I came across ... on LinkedIn ...", referencing company name, hiring role, location (if relevant), and 1-2 genuine specifics from the listing (e.g., outbound activities, bilingual outreach, acquisition/deal sourcing, CRM hygiene, client-facing focus). NEVER fabricate job duties, tools, or company facts that are not in the provided context. If the company is a recruiting/staffing firm posting a role, reflect their recruiting business naturally without over-claiming.
-3. Keep Julienne's real proof point accurate: "a 30+ workflow system like this for a travel & adventure company that saves their team around 40 hours a week" (handling things like daily lead sourcing / account discovery, staged email follow-ups so warm leads never slip, self-updating CRM hygiene, reply/bounce triage, and automated pipeline reporting).
-4. Tailor Paragraph 3 (or Paragraph 2+3) directly to how automating the repetitive outbound/admin side supports their new hire and team without adding extra admin headcount.
-5. Paragraph 4 must be a soft, no-pitch CTA offering a quick 15-minute chat/call to share 2–3 specific workflows they could automate quickly ("No pitch — you'll get a few useful ideas either way.").
-   - ONLY add the polite referral parenthetical "(And if someone on your sales or RevOps side owns this, I'd really appreciate being pointed their way.)" when the recipient's title is HR, People, Talent, Client Services, or non-Sales/non-Executive. Do NOT add that referral line when the recipient is a CEO, Co-CEO, Founder, Owner, President, VP/Director of Sales/BD/Acquisitions, or RevOps leader.
-6. Use plain text inside JSON fields (no HTML tags, no markdown formatting, no bullet lists, no URLs). Use spaced em-dashes (" — ") and en-dashes ("2–3") matching the exact punctuation style of the 4 reference emails.
-7. Do NOT include a signature, email address, website link, Calendly link, physical address, or opt-out footer — those are appended separately.
-8. Subject line: short, natural, lowercase-friendly title style matching the references (e.g., "Quick idea re: your [role] hire at [Company]" or "Quick idea for [Company]"). No exclamation marks, no emojis, no salesy hype.
-9. closing_question should be "Worth a look?".
+PROVEN PSYCHOLOGICAL PRINCIPLES TO WEAVE IN NATURALLY (never mention them explicitly):
+1. RELEVANCE & PATTERN INTERRUPT (Para 1): Open directly on their specific hiring post and the exact manual bottleneck hidden inside the role (e.g., daily outbound, follow-up chasing, CRM logging, lead research). Frame the subtle cost of that manual drag (loss aversion: talented hires losing hours every week to repetitive admin instead of actual selling/closing). NEVER fabricate job duties, tools, or company facts not in the provided context.
+2. INDUSTRY-AGNOSTIC SOCIAL PROOF + TAILORED BRIDGE (Para 2): NEVER mention "a travel company" or any specific unrelated industry. Instead, state cleanly that you built and run a 30+ workflow automation system for one of your clients that saves their team around 40 hours a week — then bridge directly to them ("Seeing what your [role/team] is taking on, I think we could put a similar setup to work for [Company] pretty quickly, without adding extra admin overhead.").
+3. RECIPROCITY + AUTONOMY / ZERO-RISK MICRO-COMMITMENT (Para 3): Make the offer genuinely hard to decline by leading with free, concrete value and giving them effortless control — offer to map out 2–3 specific workflows [Company] could automate right away on a quick 15-minute call (or send over a short 2-minute walkthrough if they'd rather skip a call), "yours to keep either way, no strings attached."
+   - ONLY if the recipient's title is HR, People, Talent, Client Services, or non-Sales/non-Executive, add a brief, gracious routing note at the end of Paragraph 3 like "(And if someone on your sales or ops side owns this, I'd appreciate a quick point in their direction.)" — while staying concise (~95–105 words max). Omit that routing note for CEOs, Founders, Owners, Presidents, VPs/Directors of Sales/BD/Acquisitions, and RevOps leads.
 
----
-REFERENCE EMAIL 1
-Subject: Quick idea re: your Sr. BDR hire at ResQ
-To: Amanda Francis (Head of People and Talent at ResQ)
-Body:
-Hi Amanda,
-
-I saw on LinkedIn that ResQ is hiring a Sr. Business Development Representative in New York to help grow your pipeline across restaurants and commercial facilities teams — especially the note about hitting 60–100 outbound activities a day and experimenting with new ways to generate meetings.
-
-I help growing teams automate the repetitive side of outbound and sales ops — finding and enriching target accounts, running staged email follow-ups so warm leads never slip, keeping the CRM clean automatically, and compiling daily pipeline summaries. I currently run a 30+ workflow system like this for a travel & adventure company that saves their team around 40 hours a week.
-
-For a high-output team like ResQ's, automating the list-building, follow-up chasing, and CRM updates lets your BDRs spend their day actually talking to restaurant and facilities managers instead of doing manual busywork — and helps you scale pipeline without adding extra admin headcount.
-
-Would it be worth a quick 15-minute chat where I share 2–3 specific workflows that could take the repetitive prospecting and CRM load off your BDR team? (And if someone on your sales or RevOps side owns this, I'd really appreciate being pointed their way.)
-
-Worth a look?
+STRICT STYLE & FORMATTING RULES:
+- LENGTH: Target 80–100 words across the 3 paragraphs (1–2 crisp sentences per paragraph). Punchy, scannable, zero fluff.
+- TONE: Warm, confident, peer-to-peer professional freelancer — NOT stiff corporate/agency jargon ("GTM engine", "outbound rollout", "synergy", "scale pipeline"), and NOT overly slangy or apologetic. Sound like a capable specialist sharing a genuinely smart idea.
+- PROOF POINT RULE: Always say "for one of my clients" (or "for a client of mine") — NEVER say "travel company" or "travel & adventure company".
+- PUNCTUATION: Plain text only inside JSON fields (no HTML, no markdown, no bullets, no URLs). Use spaced em-dashes (" — ") and en-dashes ("2–3") cleanly.
+- NO SIGNATURE OR FOOTER: Do NOT include a signature, email address, website, Calendly link, or opt-out footer — those are appended separately.
+- SUBJECT LINE: Short, natural, professional (4–7 words), e.g. "Quick idea re: your BDR hire" or "Idea for your BD team". No emojis, no exclamation marks, no hype.
+- closing_question: Short, low-pressure nudge like "Open to a quick look?" or "Worth a quick look?".
 
 ---
-REFERENCE EMAIL 2
-Subject: Quick idea re: your North Sydney SDR hire
-To: Jamie Hevia (Hiring Manager at WOW Recruitment)
+STYLE & LENGTH REFERENCE (~90 words, 3 paragraphs — match this polish, warmth, and punch):
+Subject: Quick idea re: your BDR hire
 Body:
-Hi Jamie,
+Hi Amy,
 
-I saw on LinkedIn that WOW Recruitment is hiring an SDR in North Sydney focused on outbound lead generation, booking meetings for senior AEs, and managing outreach, follow-ups, and CRM data hygiene.
+Saw on LinkedIn that The Larko Group is hiring a Business Development Associate to handle prospect research, outreach, and CRM updates — work where manual admin can quietly eat up hours that should go toward actual conversations.
 
-I loved your note about keeping recruitment human and personal — and usually the biggest thing getting in the way of that is all the repetitive admin behind the scenes: building prospect lists, chasing multi-step follow-ups, cleaning up bounced contacts, keeping the CRM synced, and putting together pipeline reports.
+I build custom AI and workflow automations, and I currently run a 30+ workflow system for one of my clients that saves their team around 40 hours a week. Seeing what your BD team is taking on, I think implementing a similar setup could pay off quickly for The Larko Group.
 
-I build custom automations that take that manual work completely off a team's plate. I currently run a 30+ workflow system for my clients that handles daily prospecting, never-cold follow-up sequences, self-updating CRM hygiene, reply/bounce triage, and automated reporting — saving them around 40 hours a week without hiring extra admin staff.
+Happy to map out 2–3 workflows you could automate right away on a quick 15-minute chat — or send a 2-minute walkthrough if you'd rather skip a call, yours to keep either way.
 
-Whether you're bringing on a new SDR or looking to multiply your current team's output, I'd love to offer a free 15-minute chat where I point out 2–3 specific outbound and CRM workflows WOW could automate quickly. No pitch — you'll get a few useful ideas either way.
-
-Worth a look?
-
----
-REFERENCE EMAIL 3
-Subject: Quick idea for SuitePad's U.S. outbound engine
-To: Nikita Palchikov (Revenue Operations Manager at SuitePad)
-Body:
-Hi Nikita,
-
-I saw on LinkedIn that SuitePad is hiring one of your first U.S.-based SDRs in Florida to build out your U.S. hospitality pipeline from the ground up — researching hotels, resorts, and hospitality management groups, running outbound campaigns, and maintaining CRM hygiene.
-
-I build custom sales and back-office automations that take that repetitive legwork off a lean GTM team's plate: automated account discovery, multi-step email follow-ups so prospects never go cold, self-updating CRM hygiene, bounce/reply triage, and automated daily pipeline reporting. I run a 30+ workflow system like this for a travel & adventure company that saves them roughly 40 hours a week on sales admin and follow-ups.
-
-Since you're scaling into the U.S. hospitality market right now, pairing your first U.S. SDR with an automated prospecting and CRM-hygiene backbone could save them hours every week and keep your HubSpot/Salesforce data spotless from day one — without needing extra ops headcount.
-
-Would you be open to a quick 15-minute call where I map out 2–3 quick-win automations tailored to SuitePad's U.S. outbound rollout? No pitch — you'll walk away with a few concrete ideas either way.
-
-Worth a look?
-
----
-REFERENCE EMAIL 4
-Subject: Quick idea for Homeland Talent Solutions
-To: Tiffany Woosley (CEO, Homeland Talent Solutions)
-Body:
-Hi Tiffany,
-
-I came across Homeland Talent Solutions' Business Development Representative listing on LinkedIn and read more about how you're scaling Homeland as a high-touch boutique recruiting firm across IT, Engineering, and Executive search.
-
-In boutique recruiting, keeping that personal, client-focused approach usually means the team gets buried in repetitive behind-the-scenes work — researching target hiring companies, chasing follow-ups so warm accounts don't go cold, updating CRM records, and pulling weekly pipeline reports.
-
-I build custom automations that run that repetitive back-office and outbound work in the background. Right now I run a 30+ workflow system for a travel & adventure company that handles daily lead sourcing, staged email follow-ups, CRM syncing, reply/bounce triage, and automated reporting — saving them around 40 hours a week without adding admin headcount.
-
-Would it be worth a quick 15-minute chat where I point out 2–3 manual workflows inside Homeland's prospecting, follow-up, or reporting ops that are easy to automate? No pitch — just practical ideas you can keep either way.
-
-Worth a look?`;
+Open to a quick look?`;
 
 interface LeadRow {
   id: string;
@@ -445,7 +394,7 @@ async function generateTailoredEmail(
 ): Promise<GeneratedDraft> {
   const firstName = extractFirstName(lead.poc_name);
   const promptLines = [
-    "Draft a tailored cold intro email for this lead, mirroring the 4 reference emails. Return exactly 4 concise paragraphs in `paragraphs`.",
+    "Draft a SHORT (~75-100 words across exactly 3 casual paragraphs — half the length of the older 4-paragraph references) tailored cold intro email from a freelancer based on this lead's LinkedIn job posting.",
     "",
     "LEAD DETAILS:",
     `- POC Full Name: ${lead.poc_name}`,
@@ -550,6 +499,7 @@ async function generateTailoredEmail(
 function buildEmailBodies(draft: GeneratedDraft): {
   htmlBody: string;
   plainBody: string;
+  bodyWordCount: number;
 } {
   const htmlParagraphs = draft.paragraphs
     .map((p) => escapeHtml(p).replace(/\r?\n/g, "<br>"))
@@ -574,7 +524,13 @@ function buildEmailBodies(draft: GeneratedDraft): {
     EMAIL_SIGNATURE_PLAIN,
   ].join("\n");
 
-  return { htmlBody, plainBody };
+  const bodyWordCount = draft.paragraphs
+    .join(" ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+
+  return { htmlBody, plainBody, bodyWordCount };
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -749,38 +705,74 @@ async function createLabeledGmailDraft(params: {
   accessToken: string;
   labelId: string;
   rawBase64Url: string;
-}): Promise<{ draftId: string; messageId: string; labelIds: string[] }> {
-  const createRes = await fetch(
-    "https://gmail.googleapis.com/gmail/v1/users/me/drafts",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${params.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: {
-          raw: params.rawBase64Url,
-        },
-      }),
-    },
-  );
+  existingDraftId?: string | null;
+}): Promise<{ draftId: string; messageId: string; labelIds: string[]; action: "updated" | "created" }> {
+  let action: "updated" | "created" = "created";
+  let res: Response | null = null;
 
-  if (!createRes.ok) {
-    const errText = await createRes.text();
-    throw new Error(
-      `Failed to create Gmail draft (${createRes.status}): ${errText.slice(0, 300)}`,
+  const existingId = params.existingDraftId?.trim();
+  if (existingId) {
+    const updateRes = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/drafts/${encodeURIComponent(existingId)}`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${params.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: existingId,
+          message: {
+            raw: params.rawBase64Url,
+          },
+        }),
+      },
     );
+    if (updateRes.ok) {
+      res = updateRes;
+      action = "updated";
+    } else if (updateRes.status !== 404) {
+      const errText = await updateRes.text();
+      throw new Error(
+        `Failed to update Gmail draft ${existingId} (${updateRes.status}): ${errText.slice(0, 300)}`,
+      );
+    }
   }
 
-  const created = (await createRes.json()) as {
+  if (!res) {
+    res = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/drafts",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${params.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: {
+            raw: params.rawBase64Url,
+          },
+        }),
+      },
+    );
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(
+        `Failed to create Gmail draft (${res.status}): ${errText.slice(0, 300)}`,
+      );
+    }
+    action = "created";
+  }
+
+  const created = (await res.json()) as {
     id?: string;
     message?: { id?: string; labelIds?: string[] };
   };
   const draftId = created.id;
   const messageId = created.message?.id;
   if (!draftId || !messageId) {
-    throw new Error("Gmail draft creation returned missing draft id or message id.");
+    throw new Error("Gmail draft save returned missing draft id or message id.");
   }
 
   // Attach the custom label (e.g. sales_leads) to the draft's underlying message
@@ -801,7 +793,7 @@ async function createLabeledGmailDraft(params: {
   if (!modRes.ok) {
     const errText = await modRes.text();
     throw new Error(
-      `Draft ${draftId} created, but failed to attach label (${modRes.status}): ${errText.slice(0, 300)}`,
+      `Draft ${draftId} saved, but failed to attach label (${modRes.status}): ${errText.slice(0, 300)}`,
     );
   }
 
@@ -810,6 +802,7 @@ async function createLabeledGmailDraft(params: {
     draftId,
     messageId,
     labelIds: modJson.labelIds ?? [],
+    action,
   };
 }
 
@@ -1013,7 +1006,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           lead,
           jobContext,
         );
-        const { htmlBody, plainBody } = buildEmailBodies(generated);
+        const { htmlBody, plainBody, bodyWordCount } = buildEmailBodies(generated);
 
         if (dryRun) {
           drafts.push({
@@ -1026,6 +1019,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             job_context_source: jobContext.source,
             job_context_note: jobContext.fetch_note,
             subject: generated.subject,
+            body_word_count: bodyWordCount,
             plain_preview: plainBody,
             html_length: htmlBody.length,
           });
@@ -1046,6 +1040,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           accessToken: gmailAccessToken,
           labelId: gmailLabelId,
           rawBase64Url,
+          existingDraftId: force ? lead.gmail_draft_id : null,
         });
 
         const draftedAtIso = new Date().toISOString();
@@ -1059,7 +1054,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
         if (updateErr) {
           throw new Error(
-            `Gmail draft ${gmailResult.draftId} created, but DB update failed: ${updateErr.message}`,
+            `Gmail draft ${gmailResult.draftId} saved, but DB update failed: ${updateErr.message}`,
           );
         }
 
@@ -1071,6 +1066,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
           hiring_role: lead.hiring_role,
           job_context_source: jobContext.source,
           subject: generated.subject,
+          body_word_count: bodyWordCount,
+          plain_preview: plainBody,
+          gmail_draft_action: gmailResult.action,
           gmail_draft_id: gmailResult.draftId,
           gmail_message_id: gmailResult.messageId,
           label_ids: gmailResult.labelIds,
